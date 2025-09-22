@@ -2,13 +2,26 @@ version: "3.9"
 services:
   backend:
     build: ./backend
+    container_name: stego-backend
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
   frontend:
     build: ./frontend
+    container_name: stego-frontend
     ports:
       - "3000:3000"
     volumes:
       - ./frontend:/app
+      - /app/node_modules 
+    stdin_open: true
+    tty: true
+    depends_on:
+      - backend
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
