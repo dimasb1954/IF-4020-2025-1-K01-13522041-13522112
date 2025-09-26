@@ -77,12 +77,37 @@ function App() {
         body: formData,
       });
       if (!response.ok) throw new Error("Upload failed");
-      const result = await response.json();
-      alert("Respon dari server: " + JSON.stringify(result));
+
+      if (mode === "insert") {
+        // === Hasilnya file MP3, langsung download ===
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "stego_output.mp3";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        alert("File stego berhasil dibuat dan diunduh!");
+      } else {
+        // === Hasil extract berupa file pesan (txt, dll) ===
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "extracted_message.txt";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        alert("Pesan berhasil diekstrak dan diunduh!");
+      }
     } catch (err) {
       console.error(err);
       alert("Gagal upload file");
     }
+
   };
 
   return (

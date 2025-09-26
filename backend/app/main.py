@@ -42,23 +42,30 @@ async def embed(
         with open(temp_message, "wb") as message_file:
             message_file.write(await message.read())
         
-        # Process embedding
-        is_encrypt = useEncryption.lower() == "true"
-        output_bytes = embed_message(
-            audio_path=temp_audio,
-            message_path=temp_message,
-            is_encrypt=is_encrypt,
-            key=seed if is_encrypt else ""
-        )
-        
-        # Return MP3 file
-        return StreamingResponse(
-            BytesIO(output_bytes),
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": f"attachment; filename=stego_{cover.filename}"
-            }
-        )
+        try:
+            # Process embedding
+            is_encrypt = useEncryption.lower() == "true"
+            output_bytes = embed_message(
+                audio_path=temp_audio,
+                message_path=temp_message,
+                is_encrypt=is_encrypt,
+                key=seed if is_encrypt else ""
+            )
+            
+            # Return MP3 file
+            return StreamingResponse(
+                BytesIO(output_bytes),
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Disposition": f"attachment; filename=stego_{cover.filename}"
+                }
+            )
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_audio):
+                os.remove(temp_audio)
+            if os.path.exists(temp_message):
+                os.remove(temp_message)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -76,22 +83,27 @@ async def extract(
         with open(temp_stego, "wb") as stego_file:
             stego_file.write(await stego.read())
         
-        # Extract message
-        is_decrypt = bool(seed)
-        extracted_bytes = extract_message(
-            stego_path=temp_stego,
-            is_decrypt=is_decrypt,
-            key=seed if is_decrypt else ""
-        )
-        
-        # Return extracted file
-        return Response(
-            content=extracted_bytes,
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f"attachment; filename=extracted_message.txt"
-            }
-        )
+        try:
+            # Extract message
+            is_decrypt = bool(seed)
+            extracted_bytes = extract_message(
+                stego_path=temp_stego,
+                is_decrypt=is_decrypt,
+                key=seed if is_decrypt else ""
+            )
+            
+            # Return extracted file
+            return Response(
+                content=extracted_bytes,
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f"attachment; filename=extracted_message.txt"
+                }
+            )
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_stego):
+                os.remove(temp_stego)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

@@ -1,9 +1,9 @@
 from email import mime
-from turtle import st
 from pydub import AudioSegment
 import magic
 import numpy as np
 import binascii
+from io import BytesIO
 
 def parse_frame_length(header_bytes):
     # header_bytes = 4 bytes
@@ -134,6 +134,10 @@ def decrypt_vigenere(ciphertext, key):
 def embed_message(audio_path, message_path, is_encrypt=False, key=""):
     # Load audio
     audio = AudioSegment.from_mp3(audio_path)
+    # Remove ID3 tags if present
+    if hasattr(audio, 'tags'):
+        audio.tags = None
+    
     raw = audio.raw_data
     channels = audio.channels
     sample_width = audio.sample_width
@@ -166,8 +170,10 @@ def embed_message(audio_path, message_path, is_encrypt=False, key=""):
         channels=channels
     )
 
-    stego_bytes = stego_audio.export(format="mp3").read()
-    return stego_bytes
+    # Export to MP3 without ID3 tags
+    output = BytesIO()
+    stego_audio.export(output, format="mp3", tags=None)
+    return output.getvalue()
 
 def extract_message(stego_path, is_decrypt=False, key=""):
     audio = AudioSegment.from_mp3(stego_path)
