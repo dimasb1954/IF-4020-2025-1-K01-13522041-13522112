@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 function App() {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [mode, setMode] = useState<"insert" | "extract">("insert");
+  const [mode, setMode] = useState<"insert" | "extract" | "calculate">("insert");
 
   // insert mode states
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -15,6 +15,11 @@ function App() {
 
   // extract mode states
   const [stegoFile, setStegoFile] = useState<File | null>(null);
+
+  // calculate mode states
+  const [calcCoverFile, setCalcCoverFile] = useState<File | null>(null);
+  const [calcStegoFile, setCalcStegoFile] = useState<File | null>(null);
+  const [psnrResult, setPsnrResult] = useState<string>("");
 
   // refs
   const coverInputRef = useRef<HTMLInputElement | null>(null);
@@ -45,8 +50,8 @@ function App() {
 
   const handleUpload = async () => {
     const formData = new FormData();
-
     let endpoint = "";
+
     if (mode === "insert") {
       if (!coverFile || !messageFile) {
         alert("Pilih cover MP3 dan file pesan terlebih dahulu!");
@@ -61,7 +66,7 @@ function App() {
         formData.append("seed", seed);
       }
       endpoint = "http://localhost:8000/embed";
-    } else {
+    } else if (mode === "extract") {
       if (!stegoFile) {
         alert("Pilih file stego MP3 terlebih dahulu!");
         return;
@@ -69,6 +74,14 @@ function App() {
       formData.append("stego", stegoFile);
       formData.append("seed", seed);
       endpoint = "http://localhost:8000/extract";
+    } else if (mode === "calculate") {
+      if (!calcCoverFile || !calcStegoFile) {
+        alert("Pilih cover MP3 dan stego MP3!");
+        return;
+      }
+      formData.append("cover", calcCoverFile);
+      formData.append("stego", calcStegoFile);
+      endpoint = "http://localhost:8000/calculate";
     }
 
     try {
@@ -79,7 +92,6 @@ function App() {
       if (!response.ok) throw new Error("Upload failed");
 
       if (mode === "insert") {
-        // === Hasilnya file MP3, langsung download ===
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -90,8 +102,7 @@ function App() {
         a.remove();
         window.URL.revokeObjectURL(url);
         alert("File stego berhasil dibuat dan diunduh!");
-      } else {
-        // === Hasil extract berupa file pesan (txt, dll) ===
+      } else if (mode === "extract") {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -102,12 +113,14 @@ function App() {
         a.remove();
         window.URL.revokeObjectURL(url);
         alert("Pesan berhasil diekstrak dan diunduh!");
+      } else if (mode === "calculate") {
+        const data = await response.json();
+        setPsnrResult(data.psnr ? data.psnr.toFixed(2) : "Error");
       }
     } catch (err) {
       console.error(err);
       alert("Gagal upload file");
     }
-
   };
 
   return (
@@ -127,7 +140,7 @@ function App() {
             onClick={() => setMode("insert")}
             className={`flex-1 ${
               mode === "insert" ? "bg-slate-800" : "bg-none"
-            } text-white rounded-md transition-all duration-300 ease-in-out`}
+            } text-white rounded-md`}
           >
             Insert Message
           </button>
@@ -135,15 +148,23 @@ function App() {
             onClick={() => setMode("extract")}
             className={`flex-1 ${
               mode === "extract" ? "bg-slate-800" : "bg-none"
-            } text-white rounded-md transition-all duration-300 ease-in-out`}
+            } text-white rounded-md`}
           >
             Extract Message
+          </button>
+          <button
+            onClick={() => setMode("calculate")}
+            className={`flex-1 ${
+              mode === "calculate" ? "bg-slate-800" : "bg-none"
+            } text-white rounded-md`}
+          >
+            Calculate PSNR
           </button>
         </div>
 
         {/* FORM */}
         <div className="w-full mt-8 flex flex-col items-center gap-4 px-6">
-          {mode === "insert" ? (
+          {mode === "insert" && (
             <>
               {/* COVER MP3 */}
               <input
@@ -239,7 +260,9 @@ function App() {
                 </label>
               </div>
             </>
-          ) : (
+          )}
+
+          {mode === "extract" && (
             <>
               {/* STEGO MP3 */}
               <input
@@ -275,12 +298,54 @@ function App() {
             </>
           )}
 
+          {mode === "calculate" && (
+            <>
+              {/* COVER MP3 */}
+              <input
+                type="file"
+                accept=".mp3"
+                onChange={(e) =>
+                  setCalcCoverFile(e.target.files ? e.target.files[0] : null)
+                }
+              />
+              {calcCoverFile && (
+                <p className="text-gray-300">
+                  Cover: <span className="font-semibold">{calcCoverFile.name}</span>
+                </p>
+              )}
+
+              {/* STEGO MP3 */}
+              <input
+                type="file"
+                accept=".mp3"
+                onChange={(e) =>
+                  setCalcStegoFile(e.target.files ? e.target.files[0] : null)
+                }
+              />
+              {calcStegoFile && (
+                <p className="text-gray-300">
+                  Stego: <span className="font-semibold">{calcStegoFile.name}</span>
+                </p>
+              )}
+
+              {psnrResult && (
+                <p className="text-green-400 font-semibold">
+                  Hasil PSNR: {psnrResult} dB
+                </p>
+              )}
+            </>
+          )}
+
           {/* SUBMIT */}
           <button
             onClick={handleUpload}
             className="px-6 py-2 text-white rounded-lg bg-blue-700 hover:bg-blue-800"
           >
-            {mode === "insert" ? "Sisipkan Pesan" : "Ekstrak Pesan"}
+            {mode === "insert"
+              ? "Sisipkan Pesan"
+              : mode === "extract"
+              ? "Ekstrak Pesan"
+              : "Hitung PSNR"}
           </button>
         </div>
       </div>

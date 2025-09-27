@@ -1,60 +1,10 @@
-from email import mime
+import random
 from pydub import AudioSegment
 import magic
 import numpy as np
-import binascii
-from io import BytesIO
-
-def parse_frame_length(header_bytes):
-    # header_bytes = 4 bytes
-    b1, b2, b3, b4 = header_bytes
-    bitrate_index = (b3 >> 4) & 0x0F
-    samplerate_index = (b3 >> 2) & 0x03
-    padding = (b3 >> 1) & 0x01
-
-    # tabel bitrate MPEG1 Layer III (kbps)
-    bitrate_table = {
-        0x01: 32, 0x02: 40, 0x03: 48, 0x04: 56,
-        0x05: 64, 0x06: 80, 0x07: 96, 0x08: 112,
-        0x09: 128, 0x0A: 160, 0x0B: 192, 0x0C: 224,
-        0x0D: 256, 0x0E: 320
-    }
-    # tabel sample rate MPEG1
-    samplerate_table = {0: 44100, 1: 48000, 2: 32000}
-
-    bitrate = bitrate_table.get(bitrate_index, None)
-    samplerate = samplerate_table.get(samplerate_index, None)
-
-    if bitrate is None or samplerate is None:
-        return None
-
-    # rumus panjang frame (MPEG1 Layer III)
-    frame_length = int((144000 * bitrate * 1000 // samplerate) + padding)
-    return frame_length
-
-
-def extract_frames(mp3_path, n=5):
-    with open(mp3_path, "rb") as f:
-        data = f.read()
-
-    frames = []
-    i = 0
-    while i < len(data) - 4 and len(frames) < n:
-        if data[i] == 0xFF and (data[i+1] & 0xE0) == 0xE0:
-            header = data[i:i+4]
-            frame_len = parse_frame_length(header)
-            if frame_len is None:
-                i += 1
-                continue
-            frame = data[i:i+frame_len]
-            frames.append(frame.hex(" "))
-            i += frame_len
-        else:
-            i += 1
-    return frames
 
 def get_mime_type(bytes_data):
-    return magic.from_buffer(bytes_data, mime=True)
+    return magic.from_buffer(bytes(bytes_data), mime=True)
 
 def get_extension_from_mime(mime_type):
     MIME_TO_EXT = {
@@ -64,6 +14,7 @@ def get_extension_from_mime(mime_type):
         'application/pdf': '.pdf',
         'application/zip': '.zip',
         'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
         'text/plain': '.txt',
         'text/html': '.html',
         'application/json': '.json',
@@ -73,28 +24,29 @@ def get_extension_from_mime(mime_type):
     return MIME_TO_EXT.get(mime_type, '.bin') 
 
 # Preprocess message file to bits with metadata
-def preprocess_message_metadata(filepath, mp3_size, is_encrypt=False, key=""):
+def preprocess_message_metadata(filepath, max_message, is_encrypt=False, key="", is_random=False, n_LSB=1):
     with open(filepath, "rb") as f:
         content = f.read()
 
-    if is_encrypt and key:
+    # Check size
+    if (( len(content)*8 + max_message.bit_length()) > max_message ):
+        raise ValueError("Message size exceeds maximum capacity of the audio")
+    
+    # Optional encryption
+    if ( is_encrypt and key ):
         content = encrypt_vigenere(content.decode('latin1'), key).encode('latin1')
     bits = ''.join(format(byte, '08b') for byte in content)
 
     # Bits for file size info
     message_len = format(len(bits), '08b')
-    len_bits = message_len.ljust(mp3_size.bit_length(), '0')
+    len_bits = message_len.rjust(max_message.bit_length(), '0')
 
-    return len_bits + bits
+    return format(n_LSB-1, '02b')+str(is_encrypt&1)+str(is_random&1)+len_bits, bits
 
-def get_message_bytes(bits, mp3_size, is_encrypt=False, key=""):
-    len_bits = bits[:mp3_size.bit_length()]
-    message_len = int(len_bits, 2)
-
-    message_bits = bits[mp3_size.bit_length():mp3_size.bit_length() + message_len]
+def get_message_bytes(bits, is_encrypt=False, key=""):
     message_bytes = bytearray()
-    for i in range(0, message_len, 8):
-        byte = message_bits[i:i+8]
+    for i in range(0, len(bits), 8):
+        byte = bits[i:i+8]
         if len(byte) < 8:
             break
         message_bytes.append(int(byte, 2))
@@ -108,6 +60,8 @@ def get_message_bytes(bits, mp3_size, is_encrypt=False, key=""):
 # Auto key Vigenere cipher
 # Plaintext is bytes and returns ciphertext bytes
 def encrypt_vigenere(plaintext, key):
+    if (key == ""):
+        return plaintext
     ciphertext = []
     if len(key) < len(plaintext):
         key = key + plaintext
@@ -121,8 +75,9 @@ def encrypt_vigenere(plaintext, key):
 
 # Ciphertext is bytes and returns plaintext bytes
 def decrypt_vigenere(ciphertext, key):
+    if (key == ""):
+        return ciphertext
     plaintext = []
-
     for i, char in enumerate(ciphertext):
         c = ord(char)
         k = ord(key[i])
@@ -131,51 +86,76 @@ def decrypt_vigenere(ciphertext, key):
         key += chr(p)  # Auto key extension
     return ''.join(plaintext)
 
-def embed_message(audio_path, message_path, is_encrypt=False, key=""):
-    # Load audio
+def embed_message(audio_path, message_path, is_encrypt=False, key="", is_random=False, n_LSB=1):
+    # Load audio & Decoding
     audio = AudioSegment.from_mp3(audio_path)
-    # Remove ID3 tags if present
-    if hasattr(audio, 'tags'):
-        audio.tags = None
-    
     raw = audio.raw_data
     channels = audio.channels
     sample_width = audio.sample_width
     frame_rate = audio.frame_rate
-    mp3_size = len(raw)
 
     if sample_width != 2:
         raise ValueError("Only 16-bit PCM is supported")
     
+    # Normalization & Scaling
     samples = np.frombuffer(raw, dtype=np.int16)
     norm = samples.astype(np.float32) / (2**15) 
     scaled = (norm * 1e6).astype(int)
+    max_message = 4*len(scaled)
 
-    message_bits = preprocess_message_metadata(message_path, mp3_size, is_encrypt, key)
+    # Preprocess message
+    message_len, message_bits = preprocess_message_metadata(message_path, max_message, is_encrypt, key, is_random, n_LSB)
+    padding_bit = 4 # 2 bits for n_LSB, 1 bit for is_encrypt, 1 bit for is_random
+
+    # Embedding message_len bits
     stego_scaled = scaled.copy()
-
-    for i, bit in enumerate(message_bits):
+    n = n_LSB - 1
+    i = 0
+    for bit in message_len:
         if bit == '0':
-            stego_scaled[i] = (stego_scaled[i] & ~1)
+            stego_scaled[i] = (stego_scaled[i] & ~(1 << n))
         else:
-            stego_scaled[i] = (stego_scaled[i] | 1)
+            stego_scaled[i] = (stego_scaled[i] | (1 << n))
 
+        if (n == 0):
+            i += 1
+            n = n_LSB - 1
+        else:
+            n -= 1
+
+    # Embedding message bits
+    n = n_LSB - 1 if is_random else n
+    i = generate_rand_index(key, len(message_len), int(message_len[padding_bit:], 2), n_LSB, len(scaled)) if is_random else i
+    for bit in message_bits:
+        if bit == '0':
+            stego_scaled[i] = (stego_scaled[i] & ~(1 << n))
+        else:
+            stego_scaled[i] = (stego_scaled[i] | (1 << n))
+
+        if (n == 0):
+            i += 1
+            n = n_LSB - 1
+        else:
+            n -= 1
+
+    # Descaling & Denormalization
     stego_norm = stego_scaled.astype(np.float32) / 1e6
     stego_pcm = (stego_norm * (2**15)).astype(np.int16)
 
+    # Encode to MP3
     stego_audio = AudioSegment(
         data=stego_pcm.tobytes(),
         sample_width=2,
         frame_rate=frame_rate,
         channels=channels
     )
+    stego_bytes = stego_audio.export(format="mp3").read()
 
-    # Export to MP3 without ID3 tags
-    output = BytesIO()
-    stego_audio.export(output, format="mp3", tags=None)
-    return output.getvalue()
+    return stego_bytes
 
-def extract_message(stego_path, is_decrypt=False, key=""):
+
+def extract_message(stego_path, key=""):
+    # Load stego audio & Decoding
     audio = AudioSegment.from_mp3(stego_path)
     raw = audio.raw_data
     sample_width = audio.sample_width
@@ -183,75 +163,73 @@ def extract_message(stego_path, is_decrypt=False, key=""):
     if sample_width != 2:
         raise ValueError("Only 16-bit PCM is supported")
 
+    # Normalization & Scaling
     samples = np.frombuffer(raw, dtype=np.int16)
     norm = samples.astype(np.float32) / (2**15)
     scaled = (norm * 1e6).astype(int)
+    max_message = 4*len(scaled)
 
-    bits = ''.join('1' if (sample & 1) else '0' for sample in scaled)
+    bits = ''
+    i = -1
+    # Get message length bits
+    while (i < len(scaled)):
+        i += 1
+        if (len(bits) >= max_message.bit_length()+2):
+            break
+        bits += str(format(scaled[i] & ((1 << n_LSB) - 1), f'0{n_LSB}b'))
 
-    message_bytes = get_message_bytes(bits, len(raw), is_decrypt, key)
+    # Parse metadata
+    padding_bit = 4 # 2 bits for n_LSB, 1 bit for is_encrypt, 1 bit for is_random
+    n_LSB = int(bits[0:2], 2) + 1
+    is_encrypt = bits[2] == '1'
+    is_random = bits[3] == '1'
+    message_len = int(bits[padding_bit:max_message.bit_length()+padding_bit], 2)
+    bits = '' if is_random else bits[max_message.bit_length()+padding_bit:]
+
+    # Get message bits
+    i = generate_rand_index(key, max_message.bit_length()+padding_bit, message_len, n_LSB, len(scaled)) if is_random else i
+    while (i < len(scaled)) & (len(bits) <= message_len):
+        bits += str(format(scaled[i] & ((1 << n_LSB) - 1), f'0{n_LSB}b'))
+        i += 1
+    bits = bits[:message_len]
+
+    message_bytes = get_message_bytes(bits, is_encrypt, key)
     mime_type = get_mime_type(message_bytes)
     extension = get_extension_from_mime(mime_type)
     
-    return message_bytes, mime_type, extension 
+    return {
+        "data": message_bytes,
+        "mime_type": mime_type,
+        "extension": extension,
+    }
 
-# # ====== 1. Load MP3 & decode ======
-# audio = AudioSegment.from_mp3("tes.mp3")
-# raw = audio.raw_data
-# channels = audio.channels
-# sample_width = audio.sample_width
-# frame_rate = audio.frame_rate
+def calculatePSNR(seg_original, seg_stego):
+    originalAudio = np.array(AudioSegment.from_mp3(seg_original).get_array_of_samples())
+    stegoAudio = np.array(AudioSegment.from_mp3(seg_stego).get_array_of_samples())
+    mse = np.mean((originalAudio - stegoAudio) ** 2)
+    if mse == 0:
+        return float('inf')  # No noise, PSNR is infinite
+    max_pixel = 2**15 - 1  # Max value for 16-bit audio
+    psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+    return psnr
 
-# # frames = extract_frames("input.mp3", n=5)
-# # for idx, frame in enumerate(frames):
-# #     print(f"\n=== Frame {idx} (len={len(bytes.fromhex(frame))}) ===")
-# #     print(frame[:100] + " ...")  # tampilkan 100 karakter pertama saja biar ringkas
+def generate_rand_index(key, lenbits_length, message_length, n_LSB, samples_length):
+    seed = sum(ord(c) for c in key)
+    random.seed(seed)
 
-# if sample_width == 2:
-#     samples = np.frombuffer(raw, dtype=np.int16)
-# else:
-#     raise ValueError("Hanya support 16-bit PCM")
+    frame_needed = message_length + (n_LSB - 1) // n_LSB
+    lenbits_frame = (lenbits_length + (n_LSB - 1) // n_LSB)
+    max_idx = samples_length - frame_needed
+    return random.randint(lenbits_frame, max_idx)
 
-# # ====== 2. Normalisasi & scaling ======
-# norm = samples.astype(np.float32) / (2**15)
-# scaled = (norm * 1e6).astype(int)
+# y = embed_message("tes.mp3", "Secret.txt", is_encrypt=False, key="BANA", is_random=True, n_LSB=8)
+# print(y["psnr"])
+# with open("output.mp3", "wb") as f:
+#     f.write(y["data"])
 
-# # ====== 3. Pesan ======
-# message = "KRIPTOGRAFI"
-# message_bits = ''.join(format(ord(c), '08b') for c in message)
+# x = extract_message("output.mp3", key="BANA", n_LSB=8)
+# print(x['extension'], x["mime_type"])
+# with open("output"+x["extension"], "wb") as f:
+#     f.write(x["data"])
 
-# print("Pesan:", message)
-# print("Pesan biner:", message_bits)
-
-# # ====== 4. Simpan salinan sebelum embedding ======
-# scaled_before = scaled.copy()
-
-# # ====== 5. Embedding ======
-# stego_scaled = scaled.copy()
-# for i, bit in enumerate(message_bits):
-#     if bit == '0':
-#         stego_scaled[i] = (stego_scaled[i] & ~1)
-#     else:
-#         stego_scaled[i] = (stego_scaled[i] | 1)
-
-# # ====== 6. Denormalisasi ======
-# stego_norm = stego_scaled.astype(np.float32) / 1e6
-# stego_pcm = (stego_norm * (2**15)).astype(np.int16)
-
-# # ====== 7. Tampilkan hex sebelum & sesudah (hanya sampel awal) ======
-# print("\nPerbandingan hex (sampel awal):")
-# for i in range(16):  # tampilkan 16 sampel pertama
-#     before_hex = (int(scaled_before[i])).to_bytes(4, "big", signed=True).hex()
-#     after_hex  = (int(stego_scaled[i])).to_bytes(4, "big", signed=True).hex()
-#     print(f"Sampel {i:03d}: before={before_hex}  after={after_hex}")
-
-# # ====== 8. Simpan hasil stego ======
-# stego_audio = AudioSegment(
-#     data=stego_pcm.tobytes(),
-#     sample_width=2,
-#     frame_rate=frame_rate,
-#     channels=channels
-# )
-# stego_audio.export("stego_output.mp3", format="mp3")
-
-# print("\nStego audio berhasil disimpan sebagai stego_output.mp3")
+# print(calculatePSNR("Sparkle.mp3", "output.mp3"))
