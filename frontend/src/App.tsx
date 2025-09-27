@@ -17,6 +17,8 @@ function App() {
   // extract mode states
   const [stegoFile, setStegoFile] = useState<File | null>(null);
   const [extractName, setExtractName] = useState<string>("");
+  const [seedX, setSeedX] = useState<string>("");
+
 
   // calculate mode states
   const [calcCoverFile, setCalcCoverFile] = useState<File | null>(null);
@@ -67,7 +69,7 @@ function App() {
       if (useEncryption || useRandomStart) {
         formData.append("seed", seed);
       }
-      formData.append("outputName", outputName || "stego_output");
+      formData.append("outputName", outputName);
       endpoint = "http://localhost:8000/embed";
     } else if (mode === "extract") {
       if (!stegoFile) {
@@ -75,8 +77,8 @@ function App() {
         return;
       }
       formData.append("stego", stegoFile);
-      formData.append("seed", seed);
-      formData.append("outputName", extractName || "extracted_message");
+      formData.append("seed", seedX);
+      formData.append("extractName", extractName);
       endpoint = "http://localhost:8000/extract";
     } else if (mode === "calculate") {
       if (!calcCoverFile || !calcStegoFile) {
@@ -305,8 +307,8 @@ function App() {
                 <span>Kunci Stego / Seed</span>
                 <input
                   type="text"
-                  value={seed}
-                  onChange={(e) => setSeed(e.target.value)}
+                  value={seedX}
+                  onChange={(e) => setSeedX(e.target.value)}
                   className="mt-1 p-2 rounded-md bg-slate-800 text-white"
                 />
               </label>
