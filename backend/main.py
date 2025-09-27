@@ -30,7 +30,8 @@ async def embed(
     useEncryption: str = Form(...),          # "true" / "false"
     useRandomStart: str = Form(...),         # "true" / "false"
     nLSB: int = Form(...),                   # jumlah bit LSB yang digunakan (1-8)
-    seed: str = Form("")                     # kunci/seed untuk enkripsi dan random start
+    seed: str = Form(""),                     # kunci/seed untuk enkripsi dan random start
+    outputName: str = Form("stego_output")
 ):
     try:
         # Save temporary files
@@ -67,7 +68,7 @@ async def embed(
                     content=output_bytes,
                     media_type="audio/mpeg",
                     headers={
-                        "Content-Disposition": f"attachment; filename=stego_{cover.filename}"
+                        "Content-Disposition": f"attachment; filename={outputName}.mp3"
                     }
                 )
             finally:
@@ -88,7 +89,9 @@ async def embed(
 @app.post("/extract")
 async def extract(
     stego: UploadFile,                      # file stego mp3
-    seed: str = Form("")                    # kunci untuk dekripsi dan random start
+    seed: str = Form(""),                    # kunci untuk dekripsi dan random start
+    outputName: str = Form("extracted_message")
+
 ):
     try:
         # Save temporary file
@@ -105,7 +108,7 @@ async def extract(
                 content=result["data"],
                 media_type=result["mime_type"],
                 headers={
-                    "Content-Disposition": f"attachment; filename=extracted_message{result['extension']}"
+                    "Content-Disposition": f"attachment; filename={outputName}{result['extension']}"
                 }
             )
         finally:

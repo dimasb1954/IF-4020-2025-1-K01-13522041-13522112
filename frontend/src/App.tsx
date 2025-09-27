@@ -12,9 +12,11 @@ function App() {
   const [useRandomStart, setUseRandomStart] = useState(false);
   const [nLSB, setNLSB] = useState<number>(1);
   const [seed, setSeed] = useState<string>("");
+  const [outputName, setOutputName] = useState<string>("");
 
   // extract mode states
   const [stegoFile, setStegoFile] = useState<File | null>(null);
+  const [extractName, setExtractName] = useState<string>("");
 
   // calculate mode states
   const [calcCoverFile, setCalcCoverFile] = useState<File | null>(null);
@@ -65,6 +67,7 @@ function App() {
       if (useEncryption || useRandomStart) {
         formData.append("seed", seed);
       }
+      formData.append("outputName", outputName || "stego_output");
       endpoint = "http://localhost:8000/embed";
     } else if (mode === "extract") {
       if (!stegoFile) {
@@ -73,6 +76,7 @@ function App() {
       }
       formData.append("stego", stegoFile);
       formData.append("seed", seed);
+      formData.append("outputName", extractName || "extracted_message");
       endpoint = "http://localhost:8000/extract";
     } else if (mode === "calculate") {
       if (!calcCoverFile || !calcStegoFile) {
@@ -91,28 +95,29 @@ function App() {
       });
       if (!response.ok) throw new Error("Upload failed");
 
-      if (mode === "insert") {
+      if (mode === "insert" || mode === "extract") {
+        // ambil nama file dari Content-Disposition
+        const disposition = response.headers.get("Content-Disposition");
+        let filename = "output.bin";
+        if (disposition && disposition.includes("filename=")) {
+          filename = disposition.split("filename=")[1].replace(/['"]/g, "");
+        }
+
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "stego_output.mp3";
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         a.remove();
         window.URL.revokeObjectURL(url);
-        alert("File stego berhasil dibuat dan diunduh!");
-      } else if (mode === "extract") {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "extracted_message.txt";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-        alert("Pesan berhasil diekstrak dan diunduh!");
+
+        alert(
+          mode === "insert"
+            ? "File stego berhasil dibuat dan diunduh!"
+            : "Pesan berhasil diekstrak dan diunduh!"
+        );
       } else if (mode === "calculate") {
         const data = await response.json();
         setPsnrResult(data.psnr ? data.psnr.toFixed(2) : "Error");
@@ -258,6 +263,16 @@ function App() {
                     }`}
                   />
                 </label>
+
+                <label className="flex flex-col text-left text-white w-full max-w-md">
+                  <span>Nama File Output (tanpa .mp3)</span>
+                  <input
+                    type="text"
+                    value={outputName}
+                    onChange={(e) => setOutputName(e.target.value)}
+                    className="mt-1 p-2 rounded-md bg-slate-800 text-white"
+                  />
+                </label>
               </div>
             </>
           )}
@@ -295,6 +310,17 @@ function App() {
                   className="mt-1 p-2 rounded-md bg-slate-800 text-white"
                 />
               </label>
+
+              <label className="flex flex-col text-left text-white w-full max-w-md">
+                <span>Nama File Output (tanpa ekstensi)</span>
+                <input
+                  type="text"
+                  value={extractName}
+                  onChange={(e) => setExtractName(e.target.value)}
+                  className="mt-1 p-2 rounded-md bg-slate-800 text-white"
+                />
+              </label>
+
             </>
           )}
 

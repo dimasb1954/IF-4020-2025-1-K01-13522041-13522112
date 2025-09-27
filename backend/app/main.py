@@ -30,7 +30,8 @@ async def embed(
     useEncryption: str = Form(...),          # "true" / "false"
     useRandomStart: str = Form(...),         # "true" / "false"
     nLSB: int = Form(...),                   # jumlah bit LSB yang digunakan (1-8)
-    seed: str = Form("")                     # kunci/seed untuk enkripsi dan random start
+    seed: str = Form(""),                     # kunci/seed untuk enkripsi dan random start
+    outputName: str = Form("stego_output")
 ):
     try:
         # Save temporary files
@@ -63,15 +64,13 @@ async def embed(
 
             try:
                 # Return MP3 file and PSNR value
-                return {
-                    "file": StreamingResponse(
-                        BytesIO(output_bytes),
-                        media_type="audio/mpeg",
-                        headers={
-                            "Content-Disposition": f"attachment; filename=stego_{cover.filename}"
-                        }
-                    ),
-                }
+                return Response(
+                    content=output_bytes,
+                    media_type="audio/mpeg",
+                    headers={
+                        "Content-Disposition": f"attachment; filename={outputName}.mp3"
+                    }
+                )
             finally:
                 # Clean up temporary stego file
                 if os.path.exists(temp_stego):
@@ -90,7 +89,9 @@ async def embed(
 @app.post("/extract")
 async def extract(
     stego: UploadFile,                      # file stego mp3
-    seed: str = Form("")                    # kunci untuk dekripsi dan random start
+    seed: str = Form(""),                    # kunci untuk dekripsi dan random start
+    outputName: str = Form("extracted_message")
+
 ):
     try:
         # Save temporary file
@@ -101,18 +102,13 @@ async def extract(
             stego_file.write(await stego.read())
         
         try:
-            # Extract message
-            message_bytes, mime_type, extension = extract_message(
-                stego_path=temp_stego,
-                key=seed
-            )
-            
-            # Return extracted file with proper mime type and extension
+            result = extract_message(stego_path=temp_stego, key=seed)
+
             return Response(
-                content=message_bytes,
-                media_type=mime_type,
+                content=result["data"],
+                media_type=result["mime_type"],
                 headers={
-                    "Content-Disposition": f"attachment; filename=extracted_message{extension}"
+                    "Content-Disposition": f"attachment; filename={outputName}{result['extension']}"
                 }
             )
         finally:
