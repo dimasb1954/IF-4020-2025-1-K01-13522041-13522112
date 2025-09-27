@@ -307,6 +307,7 @@ function App() {
                 onChange={(e) =>
                   setCalcCoverFile(e.target.files ? e.target.files[0] : null)
                 }
+                className="text-white block w-full max-w-md py-2 px-4 rounded-md bg-slate-800 border border-slate-600"
               />
               {calcCoverFile && (
                 <p className="text-gray-300">
@@ -321,6 +322,7 @@ function App() {
                 onChange={(e) =>
                   setCalcStegoFile(e.target.files ? e.target.files[0] : null)
                 }
+                className="text-white block w-full max-w-md py-2 px-4 rounded-md bg-slate-800 border border-slate-600"
               />
               {calcStegoFile && (
                 <p className="text-gray-300">
@@ -329,7 +331,7 @@ function App() {
               )}
 
               {psnrResult && (
-                <p className="text-green-400 font-semibold">
+                <p className="text-white font-semibold">
                   Hasil PSNR: {psnrResult} dB
                 </p>
               )}

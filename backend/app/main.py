@@ -15,6 +15,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],  # Allow frontend to access custom headers
 )
 
 @app.get("/")
@@ -122,32 +123,53 @@ async def extract(
     except Exception as e:
         return {"status": "error", "message": str(e)}
     
+# ============== CALCULATE PSNR =====================
 @app.post("/calculate")
 async def calculate(
-    cover: UploadFile,   # file mp3 asli
-    stego: UploadFile    # file mp3 stego
+    cover: UploadFile = Form(...),    # file mp3 asli
+    stego: UploadFile = Form(...)     # file mp3 stego
 ):
     try:
+        # Save temporary files
         temp_cover = "temp_cover.mp3"
         temp_stego = "temp_stego.mp3"
 
-        # simpan file
-        with open(temp_cover, "wb") as f:
-            f.write(await cover.read())
-        with open(temp_stego, "wb") as f:
-            f.write(await stego.read())
-
         try:
+            # Save uploaded files
+            cover_content = await cover.read()
+            stego_content = await stego.read()
+            
+            with open(temp_cover, "wb") as f:
+                f.write(cover_content)
+            with open(temp_stego, "wb") as f:
+                f.write(stego_content)
+
+            print(f"[INFO] Files saved: {temp_cover}, {temp_stego}")
+
+            # Calculate PSNR
             psnr_value = calculatePSNR(temp_cover, temp_stego)
-            return {"psnr": psnr_value}
+            print(f"[INFO] PSNR calculated: {psnr_value}")
+            
+            return {
+                "status": "success",
+                "psnr": float(psnr_value),
+                "message": "PSNR calculation successful"
+            }
+            
         finally:
+            # Clean up temporary files
             if os.path.exists(temp_cover):
                 os.remove(temp_cover)
             if os.path.exists(temp_stego):
                 os.remove(temp_stego)
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        print(f"[ERROR] Calculate PSNR failed: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "psnr": None
+        }
 
 
 if __name__ == "__main__":
