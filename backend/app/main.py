@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi import HTTPException
 import uvicorn
 from io import BytesIO
 import os
@@ -83,7 +84,10 @@ async def embed(
                 os.remove(temp_message)
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        error_msg = str(e)
+        if "exceeds maximum capacity" in error_msg:
+            raise HTTPException(status_code=400, detail="Ukuran file pesan terlalu besar untuk disisipkan ke audio ini")
+        return {"status": "error", "message": error_msg}
 
 # ============== EXTRACT =====================
 @app.post("/extract")

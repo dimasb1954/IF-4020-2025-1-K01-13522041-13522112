@@ -95,7 +95,15 @@ function App() {
         method: "POST",
         body: formData,
       });
-      if (!response.ok) throw new Error("Upload failed");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        if (errorData?.detail) {
+          alert(errorData.detail); // tampilkan pesan error dari backend
+        } else {
+          alert("Upload failed");
+        }
+        return;
+      }
 
       if (mode === "insert" || mode === "extract") {
         // ambil nama file dari Content-Disposition
