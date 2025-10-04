@@ -5,7 +5,8 @@ from fastapi import HTTPException
 import uvicorn
 from io import BytesIO
 import os
-from app.tugas2 import embed_message, extract_message, calculatePSNR
+from app.tugas2 import calculatePSNR
+from app.new import embed_message, extract_message
 
 app = FastAPI()
 
